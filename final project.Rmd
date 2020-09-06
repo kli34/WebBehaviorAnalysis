@@ -1,0 +1,305 @@
+```{r}
+df <- read.csv("ses_trans.csv")
+df
+```
+```{r}
+demo <- read.csv("demographics_2014.csv")
+demo
+```
+```{r}
+df <- sqldf("SELECT *
+            FROM df AS D
+            LEFT JOIN demo AS DE
+            ON D.machine_id = DE.machine_id")
+df
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(sqldf)
+library(anytime)
+library(plm)
+library(tidyverse)
+library(lubridate)
+library(standardize)
+library(data.table)
+library(MatchIt)
+library(gplots) 
+library(gplots)
+library(tseries)
+library(lmtest)
+library(car)
+library(qwraps2)
+library(magrittr)
+library(broom)
+library(stats)
+```
+
+
+```{r}
+sum(is.na(df$prod_totprice))
+df$prod_totprice[is.na(df$prod_totprice) == TRUE] <- mean(df$prod_totprice, na.rm = TRUE)
+table(is.na(df$prod_totprice))
+```
+
+```{r}
+sum(is.na(df$basket_tot))
+df$basket_tot[is.na(df$basket_tot) == TRUE] <- mean(df$basket_tot, na.rm = TRUE)
+table(is.na(df$basket_tot))
+```
+
+```{r}
+df <- df %>%
+  select(-c(ref_domain_name, tran_flg))
+df
+```
+
+```{r}
+df$prod_category_id <- factor(df$prod_category_id)
+df$hoh_most_education <- factor(df$hoh_most_education)
+df$census_region <- factor(df$census_region)
+df$household_size <- factor(df$household_size)
+df$hoh_oldest_age <- factor(df$hoh_oldest_age)
+df$household_income <- factor(df$household_income)
+df$children <- factor(df$children)
+df$racial_background <- factor(df$racial_background)
+df$connection_speed <- factor(df$connection_speed)
+df$country_of_origin <- factor(df$country_of_origin)
+df$zip_code <- factor(df$zip_code)
+```
+
+
+```{r}
+xx <- sqldf("SELECT prod_category_id, COUNT(basket_tot) AS Count_Basket, connection_speed
+            FROM df
+            GROUP BY prod_category_id, connection_speed
+            ORDER BY Count_Basket DESC")
+ggplot(xx, aes(x = reorder(prod_category_id, -Count_Basket), y = Count_Basket, fill = connection_speed)) +
+  geom_bar(stat = "identity")
+```
+
+```{r}
+xx <- sqldf("SELECT prod_category_id, COUNT(basket_tot) AS Count_Basket, racial_background
+            FROM df
+            GROUP BY prod_category_id, racial_background
+            ORDER BY Count_Basket DESC")
+ggplot(xx, aes(x = reorder(prod_category_id, -Count_Basket), y = Count_Basket, fill = racial_background)) +
+  geom_bar(stat = "identity")
+```
+
+
+```{r}
+summary(df$duration)
+```
+
+```{r}
+df$Dummy_Duration <- ifelse(df$duration < 32.36,0,1)
+df
+```
+
+
+```{r}
+df$event_date.x <- anydate(df$event_date.x)
+df$event_date.y <- anydate(df$event_date.y)
+```
+
+
+```{r}
+hist(df$pages_viewed)
+summary(df$pages_viewed)
+```
+```{r}
+hist(df$duration)
+summary(df$duration)
+```
+
+```{r}
+newdf <- df %>%
+  transmute(machine_id,
+            site_session_id,
+            domain_id.x,
+            pages_viewed_log = log(pages_viewed),
+            duration_log = log(duration + 1),
+            domain_name.x,
+            prod_category_id,
+            domain_id.y,
+            prod_qty_log = log(prod_qty),
+            prod_totprice_log = log(prod_totprice + 1),
+            basket_tot_log = log(basket_tot + 1),
+            event_date.y,
+            event_time.y,
+            domain_name.y,
+            hoh_most_education,
+            census_region,
+            household_size,
+            hoh_oldest_age,
+            household_income,
+            children,
+            racial_background,
+            connection_speed,
+            country_of_origin,
+            zip_code,
+            Dummy_Duration)
+newdf
+```
+
+```{r}
+hist(df$prod_qty)
+summary(df$prod_qty)
+hist(df$prod_totprice)
+summary(df$prod_totprice)
+hist(df$basket_tot)
+summary(df$basket_tot)
+df$Dummy_Duration <- factor(df$Dummy_Duration)
+```
+```{r}
+#newdf <- newdf %>%
+  #mutate(month = lubridate::month(df$event_date.y)) %>%
+  #mutate(day = lubridate::day(df$event_date.y))
+#newdf
+```
+
+```{r}
+newdf$month_day <- format(as.Date(newdf$event_date.y), "%m-%d")
+```
+
+
+```{r}
+# Dummy code variables
+library(ade4)
+newdf <- as.data.frame(newdf)
+newdf <-  newdf %>% 
+  cbind(acm.disjonctif(newdf[,c("prod_category_id","hoh_most_education","census_region","household_size","hoh_oldest_age",
+                               "household_income","children","racial_background","connection_speed","country_of_origin", "Dummy_Duration")]))%>% 
+  ungroup()
+
+#Remove the original (non-dummy-coded) variables
+newdf<-newdf %>%select(-domain_id.x,-prod_category_id,-hoh_most_education,census_region,household_size,
+                                           hoh_oldest_age,household_income,children,racial_background,connection_speed,
+                                           country_of_origin,zip_code)
+```
+
+```{r}
+newdf1 <- newdf %>%
+  dplyr::select(-c(census_region, household_size, event_time.y, domain_name.y
+, census_region, household_size, hoh_oldest_age, household_income, children, racial_background, connection_speed, country_of_origin, zip_code, Dummy_Duration, Dummy_Duration.0, Dummy_Duration.1
+))
+```
+
+
+```{r}
+newdf1 <- newdf1 %>%
+  dplyr::group_by(month_day, machine_id) %>%
+  dplyr::summarise_all(funs(mean(., na.rm = T))) %>%
+  dplyr::select(-c(domain_name.x))
+newdf1
+```
+
+```{r}
+newdf1 <- newdf1 %>%
+  distinct(month_day, machine_id,prod_category_id, .keep_all = TRUE)
+newdf1
+```
+```{r}
+newdf2 <- newdf1[-c(1249),]
+newdf2
+```
+
+
+```{r}
+names(newdf)
+```
+
+
+```{r}
+df_cov <- c("prod_qty_log","prod_totprice_log", "pages_viewed_log")
+newdf %>%
+  dplyr::group_by(Dummy_Duration) %>%
+  dplyr::select(one_of(df_cov)) %>%
+  dplyr::summarise_all(funs(mean(., na.rm = T)))
+```
+
+```{r}
+m_ps <- glm(Dummy_Duration ~ prod_category_id + prod_qty_log + prod_totprice_log + hoh_most_education + census_region + household_size + hoh_oldest_age + household_income + children + racial_background + connection_speed + country_of_origin + pages_viewed_log, family = binomial(), data = newdf)
+summary(m_ps)
+```
+
+```{r}
+prs_df <- data.frame(pr_score = predict(m_ps, type = "response"),
+                     duration = m_ps$model$Dummy_Duration)
+head(prs_df)
+```
+```{r}
+labs <- paste("People who:", c("have shorter duration", "have longer duration"))
+prs_df %>%
+  mutate(duration = ifelse(duration == 1, labs[1], labs[2])) %>%
+  ggplot(aes(x = pr_score)) +
+  geom_histogram(color = "white") +
+  facet_wrap(~duration) +
+  xlab("Probability of having Longer Duation") +
+  theme_bw()
+```
+
+```{r}
+highnotes_nomiss <- newdf %>%  # MatchIt does not allow missing values
+  select(Dummy_Duration, one_of(df_cov)) %>%
+  na.omit()
+
+model_match <- matchit(Dummy_Duration ~ prod_qty_log + prod_totprice_log + pages_viewed_log, method = "nearest", data = highnotes_nomiss)
+summary(model_match)
+plot(model_match)
+```
+
+```{r}
+dta_m <- match.data(model_match)
+dim(dta_m)
+```
+
+```{r}
+dta_m %>%
+  group_by(Dummy_Duration) %>%
+  select(one_of(df_cov)) %>%
+  summarise_all(funs(mean(., na.rm = T)))
+```
+
+```{r}
+attach(newdf2)
+pgr <- plm.data(newdf2, index = c("month_day", "machine_id"))
+```
+
+
+```{r}
+attach(pgr)
+gr_fe <- plm(basket_tot_log ~ pages_viewed_log + duration_log + prod_qty_log +
+               prod_totprice_log + prod_category_id.1 + prod_category_id.2 + prod_category_id.3 + prod_category_id.4 + prod_category_id.5 + prod_category_id.6+prod_category_id.7+prod_category_id.8+prod_category_id.9+prod_category_id.10+prod_category_id.11+prod_category_id.12+prod_category_id.13+prod_category_id.14+prod_category_id.15+prod_category_id.16+prod_category_id.17+prod_category_id.19+prod_category_id.20+prod_category_id.21+prod_category_id.22+prod_category_id.23+prod_category_id.25+prod_category_id.27+prod_category_id.28+prod_category_id.29+prod_category_id.30+prod_category_id.31+prod_category_id.32+prod_category_id.33+prod_category_id.34+prod_category_id.36+prod_category_id.37+prod_category_id.38+prod_category_id.39+prod_category_id.40+prod_category_id.41+prod_category_id.42+prod_category_id.43+prod_category_id.44+prod_category_id.45+prod_category_id.46+prod_category_id.47+prod_category_id.48+prod_category_id.49+prod_category_id.50+prod_category_id.51+prod_category_id.52+prod_category_id.53+prod_category_id.54+prod_category_id.55+prod_category_id.57+prod_category_id.59+prod_category_id.60+ prod_category_id.99 + pgr$hoh_most_education.1 + pgr$hoh_most_education.2+hoh_most_education.3+hoh_most_education.4+hoh_most_education.5+hoh_most_education.99+census_region.1+census_region.2+census_region.3+census_region.4+household_size.1+household_size.2+household_size.3+household_size.4+household_size.5+hoh_oldest_age.1+hoh_oldest_age.2+hoh_oldest_age.3+hoh_oldest_age.4+hoh_oldest_age.5+hoh_oldest_age.6+hoh_oldest_age.7+hoh_oldest_age.8+hoh_oldest_age.9+hoh_oldest_age.10+hoh_oldest_age.11+household_income.11+household_income.12+household_income.13+household_income.14+household_income.15+household_income.16+household_income.17+household_income.18+children.0+children.1+racial_background.1+racial_background.2+racial_background.3+racial_background.5+connection_speed.0+connection_speed.1+country_of_origin.0+country_of_origin.1, data = pgr, model = "within", effect = "twoways")
+print(summary(gr_fe))
+```
+
+
+```{r}
+fixef(gr_fe, effect = "time")
+fixef(gr_fe, effect = "individual")
+```
+
+```{r}
+attach(pgr)
+gr_fe2 <- plm(basket_tot_log ~ prod_totprice_log + prod_category_id.1 + prod_category_id.43+prod_category_id.45+prod_category_id.50+prod_category_id.51+prod_category_id.52+prod_category_id.59+prod_category_id.60+ prod_category_id.99 + pgr$hoh_most_education.1 + pgr$hoh_most_education.2+hoh_most_education.3+hoh_most_education.4+hoh_most_education.5+hoh_most_education.99+census_region.1+census_region.2+census_region.3+census_region.4+household_size.1+household_size.2+household_size.3+household_size.4+household_size.5+hoh_oldest_age.1+hoh_oldest_age.2+hoh_oldest_age.3+hoh_oldest_age.4+hoh_oldest_age.5+hoh_oldest_age.6+hoh_oldest_age.7+hoh_oldest_age.8+hoh_oldest_age.9+hoh_oldest_age.10+hoh_oldest_age.11+household_income.11+household_income.12+household_income.13+household_income.14+household_income.15+household_income.16+household_income.17+household_income.18+children.0+children.1+racial_background.1+racial_background.2+racial_background.3+racial_background.5+connection_speed.0+connection_speed.1+country_of_origin.0+country_of_origin.1, data = pgr, model = "within", effect = "twoways")
+summary(gr_fe2)
+```
+
+
+
+```{r}
+test <- pgr %>%
+  select(-c(machine_id, month_day, site_session_id, domain_id.y, event_date.y))
+test
+print(cor(test))
+```
+
+
+```{r}
+options(max.print=999999)
+```
+

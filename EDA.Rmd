@@ -1,0 +1,178 @@
+```{r}
+df <- read.csv("ses_trans.csv")
+df
+demo <- read.csv("demographics_2014.csv")
+demo
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(sqldf)
+library(anytime)
+library(plm)
+library(tidyverse)
+library(lubridate)
+library(standardize)
+library(data.table)
+library(MatchIt)
+library(gplots) 
+library(gplots)
+library(tseries)
+library(lmtest)
+library(car)
+library(qwraps2)
+library(magrittr)
+library(broom)
+library(stats)
+library(Hmisc)
+library(corrplot)
+library(gganimate)
+library(animation)
+library(magick)
+```
+```{r}
+df <- sqldf("SELECT *
+            FROM df AS D
+            LEFT JOIN demo AS DE
+            ON D.machine_id = DE.machine_id")
+df
+```
+
+```{r}
+sum(is.na(df$prod_totprice))
+df$prod_totprice[is.na(df$prod_totprice) == TRUE] <- mean(df$prod_totprice, na.rm = TRUE)
+table(is.na(df$prod_totprice))
+```
+
+```{r}
+sum(is.na(df$basket_tot))
+df$basket_tot[is.na(df$basket_tot) == TRUE] <- mean(df$basket_tot, na.rm = TRUE)
+table(is.na(df$basket_tot))
+```
+
+
+
+```{r}
+df <- df %>%
+  select(-c(ref_domain_name, tran_flg))
+df
+```
+
+
+```{r}
+df$prod_category_id <- factor(df$prod_category_id)
+df$hoh_most_education <- factor(df$hoh_most_education)
+df$census_region <- factor(df$census_region)
+df$household_size <- factor(df$household_size)
+df$hoh_oldest_age <- factor(df$hoh_oldest_age)
+df$household_income <- factor(df$household_income)
+df$children <- factor(df$children)
+df$racial_background <- factor(df$racial_background)
+df$connection_speed <- factor(df$connection_speed)
+df$country_of_origin <- factor(df$country_of_origin)
+df$zip_code <- factor(df$zip_code)
+```
+
+```{r}
+ggplot(df, aes(x = df$duration, fill = df$prod_category_id)) + geom_histogram(bins = 100)
+ggplot(df, aes(x = df$pages_viewed, fill = df$prod_category_id)) + geom_histogram(bins = 100)
+ggplot(df, aes(x = df$prod_totprice, fill = df$prod_category_id)) + geom_histogram(bins = 100)
+ggplot(df, aes(x = df$basket_tot, fill = df$prod_category_id)) + geom_density()
+```
+
+```{r}
+xx <- table(df$hoh_most_education)
+lbls <- c("High School", "College but no Degree", "Associate Degree", "Bachelor", "Grad", "Missing")
+pct <- round((xx / sum(xx)) * 100)
+pie(xx, labels = lbls, main = "Pie Chart of Education Level", col = c('bisque4', 'coral', 'aquamarine1',
+                                                                      'goldenrod1','deeppink2','darkslategray4'))
+```
+
+```{r}
+xx <- sqldf("SELECT prod_category_id, COUNT(basket_tot) AS Count_Basket
+            FROM df
+            GROUP BY prod_category_id
+            ORDER BY Count_Basket DESC
+            LIMIT 10")
+ggplot(xx, aes(x = reorder(prod_category_id, -Count_Basket), y = Count_Basket, fill = prod_category_id)) +
+  geom_bar(stat = "identity") + ggtitle("Basket Count by Product Category (Top 10)") + xlab("Product Category") + ylab('Basket Count')
+```
+```{r}
+xx <- sqldf("SELECT prod_category_id, SUM(basket_tot) AS SUM_Basket
+            FROM df
+            GROUP BY prod_category_id
+            ORDER BY SUM_Basket DESC
+            LIMIT 10")
+ggplot(xx, aes(x = reorder(prod_category_id, -SUM_Basket), y = SUM_Basket, fill = prod_category_id)) +
+  geom_bar(stat = "identity") + ggtitle("Basket Count by Product Category (Top 10)") + xlab("Product Category") + ylab('Basket Sum')
+```
+
+
+```{r}
+df$new_basket <- ifelse(df$basket_tot < mean(df$basket_tot), 0, 1)
+```
+
+```{r}
+df$domain_name.y <- as.character(df$domain_name.y)
+```
+
+QQ Plot For logging
+```{r}
+attach(df)
+qqPlot(df$duration)
+qqPlot(log(df$duration + 1))
+qqPlot(df$pages_viewed)
+tt <- log(df$pages_viewed)
+qqPlot(tt)
+qqPlot(prod_totprice)
+qqPlot(log(prod_totprice + 1))
+```
+CorrPlot
+```{r}
+dfcor <- df %>%
+  select(c(pages_viewed, duration))
+```
+
+```{r}
+corr <- cor(dfcor)
+corrplot(corr)
+```
+
+```{r}
+names(df)
+```
+
+```{r}
+df$event_date.x <- anydate(df$event_date.x)
+df$event_date.y <- anydate(df$event_date.y)
+```
+```{r}
+df$month <- format(as.Date(df$event_date.y), "%m")
+```
+
+```{r}
+theme_set(theme_bw())
+f <- ggplot(df, aes(x = df$duration, y = df$pages_viewed, color = df$census_region, size = df$duration, frame = df$month)) + 
+  geom_point(alpha = 0.7)+
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12)) +
+  scale_x_log10() + labs(x = "Duration", y = "Page Viewed")
+f <- f + labs(title = "Month:")
+gganimate(f)
+```
+```{r}
+ggplot(df, aes(x = df$duration, y = df$pages_viewed, color = df$hoh_most_education, size = df$duration)) + 
+  geom_point(alpha = 0.4)+
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12)) +
+  scale_x_log10() + labs(x = "Duration", y = "Page Viewed")
+```
+
+
+
+
+
+
+
+
+
